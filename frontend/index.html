@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="theme-color" content="#16a34a">
+  <title>Bovisights — Detecção de Comportamento</title>
+  <link rel="manifest" href="/manifest.json">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    #video { transform: scaleX(-1); } /* espelhar câmera frontal */
+    #overlay { position: absolute; top: 0; left: 0; pointer-events: none; }
+  </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex flex-col">
+
+  <!-- Header -->
+  <header class="bg-green-700 px-4 py-3 flex items-center justify-between">
+    <h1 class="text-lg font-bold">Bovisights CV</h1>
+    <span id="status-badge" class="text-xs px-2 py-1 rounded-full bg-gray-700">Aguardando...</span>
+  </header>
+
+  <!-- Camera Container -->
+  <div class="relative flex-1 flex flex-col items-center justify-center bg-black">
+    <div class="relative w-full max-w-lg">
+      <video id="video" class="w-full rounded-lg" autoplay playsinline muted></video>
+      <canvas id="overlay" class="w-full rounded-lg"></canvas>
+      <canvas id="canvas" class="hidden"></canvas>
+    </div>
+
+    <!-- Botão iniciar -->
+    <button id="btn-start"
+      class="mt-4 px-8 py-3 bg-green-600 hover:bg-green-500 rounded-full text-lg font-semibold transition">
+      Iniciar Detecção
+    </button>
+
+    <!-- Ações de treino (visível só quando câmera está ativa) -->
+    <div id="training-bar" class="hidden mt-3 flex gap-2 flex-wrap justify-center px-4">
+      <button id="btn-capture"
+        class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium transition flex items-center gap-1">
+        📸 Baixar Frame
+      </button>
+      <div class="flex items-center gap-1">
+        <select id="label-hint" class="bg-gray-700 text-white text-sm rounded-lg px-2 py-2 border border-gray-600">
+          <option value="lying">💤 Deitado</option>
+          <option value="eating">🌿 Comendo</option>
+          <option value="standing">🐄 Em pé</option>
+          <option value="drinking">💧 Bebendo</option>
+          <option value="ruminating">🔄 Ruminando</option>
+        </select>
+        <button id="btn-upload-train"
+          class="px-4 py-2 bg-blue-700 hover:bg-blue-600 rounded-lg text-sm font-medium transition flex items-center gap-1">
+          ⬆️ Enviar pra Treino
+        </button>
+      </div>
+    </div>
+    <div id="upload-feedback" class="hidden mt-2 text-xs text-center px-4"></div>
+  </div>
+
+  <!-- Abas -->
+  <div class="bg-gray-800 border-b border-gray-700 flex">
+    <button id="tab-live" onclick="showTab('live')"
+      class="flex-1 py-2 text-sm font-medium text-white border-b-2 border-green-500">
+      Ao vivo
+    </button>
+    <button id="tab-report" onclick="showTab('report')"
+      class="flex-1 py-2 text-sm font-medium text-gray-400 border-b-2 border-transparent">
+      Relatório da sessão
+    </button>
+  </div>
+
+  <!-- Aba: Ao vivo -->
+  <div id="panel-live" class="bg-gray-800 p-4">
+    <div id="results-empty" class="text-center text-gray-400 py-4">
+      Aponte a câmera para o lote e pressione Iniciar
+    </div>
+    <div id="results" class="hidden">
+      <div class="flex items-center justify-between mb-3">
+        <span class="font-semibold text-green-400">Animais no frame atual</span>
+        <span id="total-count" class="text-3xl font-bold text-white">0</span>
+      </div>
+      <div id="behavior-list" class="divide-y divide-gray-700 mb-3 rounded-lg overflow-hidden"></div>
+      <div class="text-xs text-gray-500 text-right mt-2">
+        <span id="inference-time">—</span>ms · <span id="model-name">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Aba: Relatório -->
+  <div id="panel-report" class="hidden bg-gray-800 p-4">
+    <div id="report-empty" class="text-center text-gray-400 py-4">
+      Inicie a detecção para gerar o relatório
+    </div>
+    <div id="report-content" class="hidden">
+      <!-- Data e horário -->
+      <div class="bg-gray-900 rounded-lg px-3 py-2 mb-3 flex items-center justify-between">
+        <div>
+          <div class="text-xs text-gray-500">Início da sessão</div>
+          <div id="report-start" class="text-sm font-medium text-white">—</div>
+        </div>
+        <div class="text-right">
+          <div class="text-xs text-gray-500">Última leitura</div>
+          <div id="report-last" class="text-sm font-medium text-white">—</div>
+        </div>
+      </div>
+      <!-- Resumo geral -->
+      <div class="bg-gray-700 rounded-lg p-3 mb-3 grid grid-cols-2 gap-2">
+        <div>
+          <div class="text-xs text-gray-400">Leituras realizadas</div>
+          <div id="report-reads" class="text-xl font-bold text-white">0</div>
+        </div>
+        <div>
+          <div class="text-xs text-gray-400">Duração</div>
+          <div id="report-duration" class="text-xl font-bold text-white">0s</div>
+        </div>
+        <div>
+          <div class="text-xs text-gray-400">Pico no frame</div>
+          <div id="report-peak" class="text-2xl font-bold text-green-400">0</div>
+          <div class="text-xs text-gray-500">maior nº visto de uma vez</div>
+        </div>
+        <div>
+          <div class="text-xs text-gray-400">Média por frame</div>
+          <div id="report-avg" class="text-2xl font-bold text-blue-400">0</div>
+          <div class="text-xs text-gray-500">animais visíveis em média</div>
+        </div>
+      </div>
+      <!-- Detalhamento por comportamento -->
+      <div class="text-xs text-gray-400 mb-2 uppercase tracking-wide">Comportamentos detectados</div>
+      <div id="report-behaviors" class="divide-y divide-gray-700 rounded-lg overflow-hidden mb-3"></div>
+      <!-- Botões exportar / limpar -->
+      <div class="flex gap-2 mt-1">
+        <button onclick="exportCSV()"
+          class="flex-1 py-2 text-xs text-green-400 hover:text-white border border-green-700 hover:border-green-400 rounded-lg transition">
+          Exportar CSV
+        </button>
+        <button onclick="exportTXT()"
+          class="flex-1 py-2 text-xs text-blue-400 hover:text-white border border-blue-700 hover:border-blue-400 rounded-lg transition">
+          Exportar TXT
+        </button>
+        <button onclick="resetReport()"
+          class="flex-1 py-2 text-xs text-gray-400 hover:text-white border border-gray-600 hover:border-gray-400 rounded-lg transition">
+          Zerar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = window.location.origin;
+    const INTERVAL_MS = 3000;
+
+    const BEHAVIOR_CONFIG = {
+      eating:         { label: "Comendo",        icon: "🌿", color: "bg-green-600" },
+      lying:          { label: "Deitado",        icon: "💤", color: "bg-blue-600" },
+      standing:       { label: "Em pé",          icon: "🐄", color: "bg-gray-600" },
+      drinking:       { label: "Bebendo",        icon: "💧", color: "bg-cyan-600" },
+      ruminating:     { label: "Ruminando",      icon: "🔄", color: "bg-purple-600" },
+      running:        { label: "Agitado",        icon: "⚡", color: "bg-red-600" },
+      unknown:        { label: "Outro",          icon: "❓", color: "bg-yellow-600" },
+      not_identified: { label: "Não classificado", icon: "👁️", color: "bg-orange-600" },
+    };
+
+    let stream = null;
+    let intervalId = null;
+    let isRunning = false;
+
+    // Relatório acumulado da sessão
+    const report = {
+      reads: 0,
+      startTime: null,
+      lastTime: null,
+      maxAnimals: 0,   // pico: maior nº de animais visto num único frame
+      sumAnimals: 0,   // soma para calcular média por frame
+      // totals: soma bruta por comportamento (para calcular % relativa entre comportamentos)
+      totals: { eating: 0, lying: 0, standing: 0, drinking: 0, ruminating: 0, running: 0, unknown: 0, not_identified: 0 },
+    };
+
+    function fmtDatetime(ts) {
+      if (!ts) return "—";
+      const d = new Date(ts);
+      const date = d.toLocaleDateString("pt-BR");
+      const time = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      return `${date} ${time}`;
+    }
+
+    function resetReport() {
+      report.reads = 0;
+      report.startTime = isRunning ? Date.now() : null;
+      report.lastTime = null;
+      report.maxAnimals = 0;
+      report.sumAnimals = 0;
+      for (const k of Object.keys(report.totals)) report.totals[k] = 0;
+      renderReport();
+    }
+
+    function showTab(tab) {
+      const isLive = tab === "live";
+      document.getElementById("panel-live").classList.toggle("hidden", !isLive);
+      document.getElementById("panel-report").classList.toggle("hidden", isLive);
+      document.getElementById("tab-live").className = `flex-1 py-2 text-sm font-medium border-b-2 ${isLive ? "text-white border-green-500" : "text-gray-400 border-transparent"}`;
+      document.getElementById("tab-report").className = `flex-1 py-2 text-sm font-medium border-b-2 ${!isLive ? "text-white border-green-500" : "text-gray-400 border-transparent"}`;
+    }
+
+    function updateReport(data) {
+      if (!report.startTime) report.startTime = Date.now();
+      report.lastTime = Date.now();
+      report.reads++;
+      if (data.total_animals > report.maxAnimals) report.maxAnimals = data.total_animals;
+      report.sumAnimals += data.total_animals;
+      for (const k of Object.keys(report.totals)) {
+        report.totals[k] += (data.behaviors[k] || 0);
+      }
+      renderReport();
+    }
+
+    function renderReport() {
+      const isEmpty = report.reads === 0;
+      document.getElementById("report-empty").classList.toggle("hidden", !isEmpty);
+      document.getElementById("report-content").classList.toggle("hidden", isEmpty);
+      if (isEmpty) return;
+
+      const elapsed = report.startTime ? Math.floor((Date.now() - report.startTime) / 1000) : 0;
+      const mins = Math.floor(elapsed / 60);
+      const secs = elapsed % 60;
+      const avgAnimals = report.reads > 0 ? (report.sumAnimals / report.reads).toFixed(1) : "0";
+
+      document.getElementById("report-start").textContent = fmtDatetime(report.startTime);
+      document.getElementById("report-last").textContent = fmtDatetime(report.lastTime);
+      document.getElementById("report-reads").textContent = report.reads;
+      document.getElementById("report-peak").textContent = report.maxAnimals;
+      document.getElementById("report-avg").textContent = avgAnimals;
+      document.getElementById("report-duration").textContent = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
+      // Distribuição de comportamentos: % relativa entre comportamentos (ignora repetição)
+      const ORDER = ["standing", "lying", "eating", "drinking", "ruminating", "running", "unknown", "not_identified"];
+      const totalDetections = ORDER.reduce((s, k) => s + report.totals[k], 0) || 1;
+
+      const container = document.getElementById("report-behaviors");
+      container.innerHTML = "";
+
+      for (const key of ORDER) {
+        const cfg = BEHAVIOR_CONFIG[key];
+        const val = report.totals[key];
+        if (val === 0) continue;
+        const pct = Math.round((val / totalDetections) * 100);
+        const avgPerFrame = (val / report.reads).toFixed(1);
+        const row = document.createElement("div");
+        row.className = "flex items-center gap-3 bg-gray-700 px-3 py-2";
+        row.innerHTML = `
+          <span class="text-lg w-6 text-center">${cfg.icon}</span>
+          <span class="flex-1 text-sm text-white">${cfg.label}</span>
+          <div class="w-16 bg-gray-600 rounded-full h-2 overflow-hidden">
+            <div class="${cfg.color} h-2 rounded-full" style="width:${pct}%"></div>
+          </div>
+          <span class="text-xs font-bold text-white w-10 text-right">${pct}%</span>
+          <span class="text-xs text-gray-400 w-14 text-right">~${avgPerFrame}/frame</span>
+        `;
+        container.appendChild(row);
+      }
+    }
+
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const overlay = document.getElementById("overlay");
+    const btnStart = document.getElementById("btn-start");
+    const statusBadge = document.getElementById("status-badge");
+    const results = document.getElementById("results");
+    const resultsEmpty = document.getElementById("results-empty");
+    const totalCount = document.getElementById("total-count");
+    const behaviorCounts = document.getElementById("behavior-counts");
+    const inferenceTime = document.getElementById("inference-time");
+    const modelName = document.getElementById("model-name");
+    const trainingBar = document.getElementById("training-bar");
+    const btnCapture = document.getElementById("btn-capture");
+    const btnUploadTrain = document.getElementById("btn-upload-train");
+    const labelHint = document.getElementById("label-hint");
+    const uploadFeedback = document.getElementById("upload-feedback");
+
+    btnStart.addEventListener("click", async () => {
+      if (isRunning) {
+        stopDetection();
+        return;
+      }
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } }
+        });
+        video.srcObject = stream;
+        video.play();
+        startDetection();
+      } catch (err) {
+        alert("Não foi possível acessar a câmera: " + err.message);
+      }
+    });
+
+    function startDetection() {
+      isRunning = true;
+      report.startTime = Date.now();
+      btnStart.textContent = "⏹ Parar";
+      btnStart.classList.replace("bg-green-600", "bg-red-600");
+      setStatus("Detectando...", "bg-green-600");
+      trainingBar.classList.remove("hidden");
+      intervalId = setInterval(captureAndDetect, INTERVAL_MS);
+      captureAndDetect();
+    }
+
+    function stopDetection() {
+      isRunning = false;
+      clearInterval(intervalId);
+      if (stream) { stream.getTracks().forEach(t => t.stop()); }
+      btnStart.textContent = "📷 Iniciar Detecção";
+      btnStart.classList.replace("bg-red-600", "bg-green-600");
+      setStatus("Parado", "bg-gray-700");
+      trainingBar.classList.add("hidden");
+      uploadFeedback.classList.add("hidden");
+      clearOverlay();
+    }
+
+    function captureFrameB64() {
+      if (!video.readyState || video.readyState < 2) return null;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0);
+      return canvas.toDataURL("image/jpeg", 0.9).split(",")[1];
+    }
+
+    btnCapture.addEventListener("click", () => {
+      const b64 = captureFrameB64();
+      if (!b64) return;
+      const a = document.createElement("a");
+      const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      a.download = `bovino_${ts}.jpg`;
+      a.href = "data:image/jpeg;base64," + b64;
+      a.click();
+    });
+
+    btnUploadTrain.addEventListener("click", async () => {
+      const b64 = captureFrameB64();
+      if (!b64) return;
+
+      const label = labelHint.value;
+      const cfg = BEHAVIOR_CONFIG[label];
+
+      btnUploadTrain.disabled = true;
+      btnUploadTrain.textContent = "Enviando...";
+      uploadFeedback.className = "mt-2 text-xs text-center px-4 text-yellow-400";
+      uploadFeedback.textContent = "Enviando frame para o Roboflow...";
+      uploadFeedback.classList.remove("hidden");
+
+      try {
+        const response = await fetch(`${API_URL}/api/v1/training/upload`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: b64, label_hint: label, batch_name: "campo" }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          uploadFeedback.className = "mt-2 text-xs text-center px-4 text-red-400";
+          uploadFeedback.textContent = "Erro: " + (data.detail || "falha no envio");
+        } else {
+          uploadFeedback.className = "mt-2 text-xs text-center px-4 text-green-400";
+          uploadFeedback.innerHTML = `${cfg.icon} Frame "${cfg.label}" enviado! <a href="${data.roboflow_url}/annotate" target="_blank" class="underline text-blue-300">Anotar no Roboflow →</a>`;
+        }
+      } catch (err) {
+        uploadFeedback.className = "mt-2 text-xs text-center px-4 text-red-400";
+        uploadFeedback.textContent = "Erro de conexão com o servidor";
+      } finally {
+        btnUploadTrain.disabled = false;
+        btnUploadTrain.textContent = "⬆️ Enviar pra Treino";
+      }
+    });
+
+    async function captureAndDetect() {
+      const imageB64 = captureFrameB64();
+      if (!imageB64) return;
+
+      try {
+        setStatus("Analisando...", "bg-yellow-600");
+        const response = await fetch(`${API_URL}/api/v1/detect/base64`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: imageB64 }),
+        });
+
+        if (!response.ok) throw new Error("API retornou " + response.status);
+        const data = await response.json();
+        renderResults(data);
+        updateReport(data);
+        drawBoxes(data.detections, canvas.width, canvas.height);
+        setStatus("✓ Ativo", "bg-green-600");
+      } catch (err) {
+        console.error("Erro na detecção:", err);
+        setStatus("Erro de conexão", "bg-red-700");
+      }
+    }
+
+    const behaviorList = document.getElementById("behavior-list");
+
+    function renderResults(data) {
+      resultsEmpty.classList.add("hidden");
+      results.classList.remove("hidden");
+      totalCount.textContent = data.total_animals;
+      inferenceTime.textContent = data.inference_time_ms.toFixed(0);
+      modelName.textContent = data.model_used;
+
+      behaviorList.innerHTML = "";
+
+      // Linha para cada comportamento detectado + "Não identificado"
+      const ORDER = ["standing", "lying", "eating", "drinking", "ruminating", "running", "unknown", "not_identified"];
+      const total = data.total_animals || 1;
+
+      for (const key of ORDER) {
+        const cfg = BEHAVIOR_CONFIG[key];
+        const count = data.behaviors[key] || 0;
+
+        const row = document.createElement("div");
+        row.className = "flex items-center gap-3 bg-gray-700 px-3 py-2";
+
+        const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+        const barColor = count === 0 ? "bg-gray-600" : cfg.color;
+
+        row.innerHTML = `
+          <span class="text-lg w-6 text-center">${cfg.icon}</span>
+          <span class="flex-1 text-sm text-white">${cfg.label}</span>
+          <div class="flex-1 bg-gray-600 rounded-full h-2 overflow-hidden">
+            <div class="${barColor} h-2 rounded-full transition-all duration-500" style="width:${pct}%"></div>
+          </div>
+          <span class="text-sm font-bold w-6 text-right ${count > 0 ? 'text-white' : 'text-gray-500'}">${count}</span>
+        `;
+        behaviorList.appendChild(row);
+      }
+    }
+
+    function drawBoxes(detections, imgW, imgH) {
+      const displayW = video.offsetWidth;
+      const displayH = video.offsetHeight;
+      overlay.width = displayW;
+      overlay.height = displayH;
+      const ctx = overlay.getContext("2d");
+      ctx.clearRect(0, 0, displayW, displayH);
+
+      const scaleX = displayW / imgW;
+      const scaleY = displayH / imgH;
+
+      for (const det of detections) {
+        const cfg = BEHAVIOR_CONFIG[det.label] || BEHAVIOR_CONFIG.unknown;
+        const x = (det.x - det.width / 2) * scaleX;
+        const y = (det.y - det.height / 2) * scaleY;
+        const w = det.width * scaleX;
+        const h = det.height * scaleY;
+
+        ctx.strokeStyle = "#22c55e";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, w, h);
+
+        ctx.fillStyle = "rgba(22, 163, 74, 0.7)";
+        ctx.fillRect(x, y - 20, w, 20);
+        ctx.fillStyle = "white";
+        ctx.font = "12px Arial";
+        ctx.fillText(`${cfg.icon} ${cfg.label} ${(det.confidence * 100).toFixed(0)}%`, x + 4, y - 5);
+      }
+    }
+
+    function clearOverlay() {
+      const ctx = overlay.getContext("2d");
+      ctx.clearRect(0, 0, overlay.width, overlay.height);
+    }
+
+    function setStatus(text, colorClass) {
+      statusBadge.textContent = text;
+      statusBadge.className = `text-xs px-2 py-1 rounded-full ${colorClass}`;
+    }
+
+    function buildReportLines() {
+      const ORDER = ["standing", "lying", "eating", "drinking", "ruminating", "running", "unknown", "not_identified"];
+      const elapsed = report.startTime ? Math.floor((Date.now() - report.startTime) / 1000) : 0;
+      const mins = Math.floor(elapsed / 60), secs = elapsed % 60;
+      const durStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+      const totalDetections = ORDER.reduce((s, k) => s + report.totals[k], 0) || 1;
+      const avgAnimals = report.reads > 0 ? (report.sumAnimals / report.reads).toFixed(1) : "0";
+      return {
+        header: {
+          inicio: fmtDatetime(report.startTime),
+          ultima_leitura: fmtDatetime(report.lastTime),
+          total_leituras: report.reads,
+          pico_animais_no_frame: report.maxAnimals,
+          media_animais_por_frame: avgAnimals,
+          duracao: durStr,
+        },
+        comportamentos: ORDER.filter(k => report.totals[k] > 0).map(k => ({
+          comportamento: BEHAVIOR_CONFIG[k].label,
+          percentual: Math.round((report.totals[k] / totalDetections) * 100) + "%",
+          media_por_frame: report.reads > 0 ? (report.totals[k] / report.reads).toFixed(1) : "0",
+        })),
+      };
+    }
+
+    function exportCSV() {
+      const d = buildReportLines();
+      const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
+      let csv = "Bovisights — Relatório de Sessão\n";
+      csv += `Início;${d.header.inicio}\n`;
+      csv += `Última leitura;${d.header.ultima_leitura}\n`;
+      csv += `Total de leituras;${d.header.total_leituras}\n`;
+      csv += `Pico animais no frame;${d.header.pico_animais_no_frame}\n`;
+      csv += `Média animais por frame;${d.header.media_animais_por_frame}\n`;
+      csv += `Duração;${d.header.duracao}\n\n`;
+      csv += "Comportamento;% das detecções;Média por frame\n";
+      for (const r of d.comportamentos) {
+        csv += `${r.comportamento};${r.percentual};${r.media_por_frame}\n`;
+      }
+      const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `bovisights_${ts}.csv`;
+      a.click();
+    }
+
+    function exportTXT() {
+      const d = buildReportLines();
+      const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
+      const sep = "─".repeat(36);
+      let txt = `BOVISIGHTS — RELATÓRIO DE SESSÃO\n${sep}\n`;
+      txt += `Início da sessão : ${d.header.inicio}\n`;
+      txt += `Última leitura   : ${d.header.ultima_leitura}\n`;
+      txt += `Total de leituras: ${d.header.total_leituras}\n`;
+      txt += `Pico no frame    : ${d.header.pico_animais_no_frame} animais\n`;
+      txt += `Média por frame  : ${d.header.media_animais_por_frame} animais\n`;
+      txt += `Duração          : ${d.header.duracao}\n`;
+      txt += `${sep}\nDISTRIBUIÇÃO DE COMPORTAMENTOS\n${sep}\n`;
+      for (const r of d.comportamentos) {
+        const pad = r.comportamento.padEnd(16);
+        txt += `${pad} | ${r.percentual.padStart(4)} das detecções | ~${r.media_por_frame}/frame\n`;
+      }
+      txt += sep;
+      const blob = new Blob([txt], { type: "text/plain;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `bovisights_${ts}.txt`;
+      a.click();
+    }
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(console.error);
+    }
+  </script>
+</body>
+</html>

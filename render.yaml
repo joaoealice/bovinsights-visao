@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: bovinsights-visao
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: ROBOFLOW_API_KEY
+        sync: false
+      - key: ROBOFLOW_MODEL_ID
+        value: cattle-dataset-behavior-cqtzu
+      - key: ROBOFLOW_MODEL_VERSION
+        value: "1"
+      - key: ROBOFLOW_COUNT_MODEL_ID
+        value: cow-count
+      - key: ROBOFLOW_COUNT_MODEL_VERSION
+        value: "2"
+      - key: ROBOFLOW_WORKSPACE
+        value: grupo-j-f-business
+      - key: ROBOFLOW_PROJECT
+        value: bovinos-confinamento
+      - key: API_ENV
+        value: production
+      - key: ALLOWED_ORIGINS
+        sync: false
