@@ -2,33 +2,41 @@
 
 ## Em aberto
 
-### 1. Detecção de bovinos deitados
-- ~~O modelo `cow-behavior-tracking/1` não está identificando animais deitados~~
-- **[2026-03-27] Modelo trocado para `cattle-dataset-behavior-cqtzu/1`**
-  - mAP 81.16% | Recall 74.40% | Precision 84.10%
-  - Classes: eating, foraging, lying down, standing, drinking water, rumination, falling, sitting
-  - 3811 imagens de treinamento — muito mais robusto
-  - Testar em campo com vídeos reais do confinamento
-- [ ] Treinar modelo próprio com imagens dos **seus** animais
-  - Usar `python scripts/extrair_frames.py --video seu_video.mp4 --upload`
-  - Anotar frames no Roboflow, marcar "lying" nos deitados
-  - Treinar nova versão e atualizar `.env`
+### 1. Melhorar detecção de comportamentos
+- Modelo atual `cattle-dataset-behavior-cqtzu/1` não detecta todos os animais em campo
+- **Próximos passos:**
+  - [ ] Capturar frames reais do confinamento com o botão "Enviar pra Treino"
+  - [ ] Acumular 30+ frames por comportamento (lying, eating, standing)
+  - [ ] Anotar no Roboflow → app.roboflow.com/grupo-j-f-business/bovinos-confinamento
+  - [ ] Treinar nova versão do modelo com imagens dos próprios animais
+  - [ ] Atualizar `ROBOFLOW_MODEL_ID` e `ROBOFLOW_MODEL_VERSION` no Railway
 
-### 2. Deploy no Railway.app
-- MVP local funcionando, falta publicar para acesso via celular em campo
-- Ver Seção 10 do AGENT.md para instruções completas
-- Variáveis de ambiente a configurar no Railway:
-  - `ROBOFLOW_API_KEY`
-  - `ROBOFLOW_MODEL_ID`
-  - `ROBOFLOW_MODEL_VERSION`
-  - `API_ENV=production`
-  - `ALLOWED_ORIGINS=https://SEU_DOMINIO.up.railway.app`
+### 2. Tracking de animais únicos
+- Hoje o sistema conta detecções por frame, não animais únicos
+- Relatório usa pico/média por frame como estimativa (honesto, mas não preciso)
+- **Solução futura:** implementar ByteTrack/BoT-SORT via Ultralytics para rastrear IDs
+- Requer câmera fixa no confinamento (não funciona bem com câmera em movimento)
+
+### 3. Temperatura dos animais
+- Não é possível via câmera comum
+- **Opções futuras:**
+  - Câmera térmica (FLIR) — R$ 3.000~30.000
+  - Sensores IoT no animal (brinco/bolus) — R$ 300~800/animal
+  - Integrar dados do sensor com o comportamento visual para alertas de doença
 
 ## Concluído em 2026-03-27
-- [x] Pesquisa de modelos no Roboflow Universe com classe "lying"
-- [x] Troca para modelo `cattle-dataset-behavior-cqtzu/1` (mAP 81%, tem lying down)
-- [x] LABEL_MAP atualizado com "drinking water", "falling", "sitting"
-- [x] Script `scripts/extrair_frames.py` criado para extrair frames de vídeo
+- [x] Troca para modelo `cattle-dataset-behavior-cqtzu/1` (mAP 81%, detecta lying down)
+- [x] Modelo de contagem `cow-count/2` (mAP 98%) rodando em paralelo
+- [x] LABEL_MAP atualizado com todos os comportamentos
+- [x] Script `scripts/extrair_frames.py` para extrair frames de vídeo
+- [x] Interface com abas: Ao vivo / Relatório da sessão
+- [x] Relatório com pico, média por frame e % de comportamentos
+- [x] Export do relatório em CSV e TXT com data e hora
+- [x] Botão "Baixar Frame" e "Enviar pra Treino" com upload para Roboflow
+- [x] Link direto para anotar no Roboflow após upload
+- [x] Deploy no Railway — servidor 24h no ar
+- [x] Domínio customizado: visao.bovinsights.com.br
+- [x] Repositório GitHub: github.com/joaoealice/bovinsights-visao
 
 ## Concluído em 2026-03-26
 - [x] Estrutura completa do projeto criada
