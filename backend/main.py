@@ -4,7 +4,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
-from .routers import inference, health, training
+from .routers import inference, health, training, alertas, stream, sessao
+from .database import init_db
+from .models import alerta as _alerta_model  # garante registro no metadata
+from .models import sessao as _sessao_model  # garante registro no metadata
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,6 +28,12 @@ async def startup_event():
     except Exception as e:
         logger.error(f"[ERRO] Falha ao carregar configurações: {e}")
 
+    try:
+        init_db()
+        logger.info("[OK] Banco de dados inicializado — bovinsights.db")
+    except Exception as e:
+        logger.error(f"[ERRO] Falha ao inicializar banco de dados: {e}")
+
 
 # CORS — permite que o celular do cliente chame a API
 app.add_middleware(
@@ -39,6 +48,9 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(inference.router)
 app.include_router(training.router)
+app.include_router(alertas.router)
+app.include_router(stream.router)
+app.include_router(sessao.router)
 
 # Servir o frontend (PWA) como arquivos estáticos
 frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     max_image_size_mb: int = 5
     inference_interval_seconds: int = 3
     allowed_origins: str = "http://localhost:3000"
+    histogram_equalization: bool = True
 
     class Config:
         env_file = ".env"
