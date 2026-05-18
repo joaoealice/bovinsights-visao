@@ -9,3 +9,4 @@ python-multipart>=0.0.9
 requests>=2.32.0
 opencv-python-headless>=4.9.0
 sqlalchemy>=2.0
+google-generativeai>=0.8.0

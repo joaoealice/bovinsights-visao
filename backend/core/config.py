@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     inference_interval_seconds: int = 3
     allowed_origins: str = "http://localhost:3000"
     histogram_equalization: bool = True
+    use_local_model: bool = False  # True = usa modelo local; False = usa Roboflow API
 
     class Config:
         env_file = ".env"

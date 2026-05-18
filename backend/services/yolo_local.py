@@ -1,8 +1,7 @@
 """
-Fallback local usando YOLOv11 nano (sem GPU, sem internet).
-Menos preciso para comportamentos, mas garante disponibilidade.
-Detecta apenas "cow" (classe 19 do COCO) sem classes de comportamento.
-Em produção (nuvem), este fallback não é usado — o Roboflow sempre está disponível.
+Inferência local com modelo YOLOv11 treinado no dataset Bovinsights.
+Classes: Comendo, Deitado, Em pe, Escondido, Pastando
+mAP50: 0.861
 """
 import io
 import time
@@ -17,12 +16,24 @@ try:
 except ImportError:
     _YOLO_AVAILABLE = False
 
+# Mapeamento: classes do modelo treinado → campos do BehaviorCount
+LABEL_MAP = {
+    "comendo":   "eating",
+    "deitado":   "lying",
+    "em pe":     "standing",
+    "em pé":     "standing",
+    "escondido": "unknown",
+    "pastando":  "eating",   # pastando = variação de comendo
+}
+
+MODEL_PATH = "backend/models/bovinsights_yolo11n_best.pt"
+
 
 @lru_cache(maxsize=1)
 def get_model():
     if not _YOLO_AVAILABLE:
         return None
-    return YOLO("yolo11n.pt")
+    return YOLO(MODEL_PATH)
 
 
 async def run_inference_local(image_bytes: bytes) -> DetectionResponse:
@@ -34,35 +45,45 @@ async def run_inference_local(image_bytes: bytes) -> DetectionResponse:
             detections=[],
             inference_time_ms=0,
             model_used="unavailable",
-            message="Modelo local indisponível. Verifique a conexão com o Roboflow.",
+            message="Ultralytics não instalado.",
         )
+
     model = get_model()
     img = Image.open(io.BytesIO(image_bytes))
     img_array = np.array(img)
 
     start = time.time()
-    results = model.predict(img_array, classes=[19], conf=0.4, verbose=False)
+    results = model.predict(img_array, conf=0.4, verbose=False)
     elapsed_ms = (time.time() - start) * 1000
 
+    counts = BehaviorCount()
     boxes = []
+
     for r in results:
         for box in r.boxes:
+            raw_label = model.names[int(box.cls[0])].lower()
+            label = LABEL_MAP.get(raw_label, "unknown")
+
+            current = getattr(counts, label, None)
+            if current is not None:
+                setattr(counts, label, current + 1)
+            else:
+                counts.unknown += 1
+
             x, y, w, h = box.xywh[0].tolist()
             boxes.append(DetectionBox(
                 x=x, y=y, width=w, height=h,
                 confidence=float(box.conf[0]),
-                label="standing",  # sem classe comportamental no fallback
+                label=label,
             ))
 
     total = len(boxes)
-    counts = BehaviorCount(standing=total)  # assume standing no fallback
-
     return DetectionResponse(
         success=True,
         total_animals=total,
         behaviors=counts,
         detections=boxes,
         inference_time_ms=round(elapsed_ms, 1),
-        model_used="local_yolo11n",
-        message="Modo offline: comportamentos não disponíveis, apenas contagem",
+        model_used="bovinsights_yolo11n",
+        message=f"{total} animal(is) detectado(s)",
     )
