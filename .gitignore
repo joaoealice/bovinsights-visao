@@ -16,6 +16,7 @@ build/
 
 # YOLOv11 weights
 *.pt
+!backend/models/bovinsights_yolo11n_best.pt
 
 # IDE
 .vscode/
