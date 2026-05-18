@@ -56,6 +56,9 @@ async def _run_com_fallback(
     try:
         t = time.time()
         resultado = await run_inference(image_b64)
+        if resultado.total_animals == 0:
+            logger.warning("[WARN] Roboflow retornou 0 animais. Tentando YOLO local...")
+            raise Exception("Roboflow retornou resultado vazio")
         logger.info(f"[OK] Roboflow respondeu em {(time.time()-t)*1000:.0f}ms")
         return resultado
     except Exception as e:
@@ -67,6 +70,9 @@ async def _run_com_fallback(
     try:
         t = time.time()
         resultado = await run_inference_local(image_bytes)
+        if resultado.total_animals == 0:
+            logger.warning("[WARN] YOLO local retornou 0 animais. Tentando Gemini Vision...")
+            raise Exception("YOLO local retornou resultado vazio")
         logger.info(f"[OK] YOLO local respondeu em {(time.time()-t)*1000:.0f}ms")
         return resultado
     except Exception as e:
