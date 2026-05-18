@@ -75,7 +75,7 @@ async def run_inference(image_b64: str) -> DetectionResponse:
             url,
             params={
                 "api_key":    settings.roboflow_api_key,
-                "confidence": 45,   # ← era 20, agora 45
+                "confidence": 35,   # ← era 45, agora 35
                 "overlap":    30,
             },
             data=image_b64,
