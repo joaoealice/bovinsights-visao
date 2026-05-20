@@ -1,11 +1,14 @@
 import base64
 import httpx
 import asyncio
+import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from ..core.config import get_settings
 import requests as req_sync
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/training", tags=["training"])
 
@@ -57,9 +60,9 @@ async def upload_training_frame(payload: TrainingUploadRequest):
 
     try:
         def _upload():
-            print(f"[DEBUG] URL: {url}")
-            print(f"[DEBUG] Params: {params}")
-            print(f"[DEBUG] Image len: {len(payload.image)}")
+            logger.debug("URL: %s", url)
+            logger.debug("Params: %s", params)
+            logger.debug("Image len: %s", len(payload.image))
             r = req_sync.post(
                 url,
                 params=params,
@@ -67,8 +70,8 @@ async def upload_training_frame(payload: TrainingUploadRequest):
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
                 timeout=20,
             )
-            print(f"[DEBUG] Roboflow status: {r.status_code}")
-            print(f"[DEBUG] Roboflow response: {r.text[:300]}")
+            logger.debug("Roboflow status: %s", r.status_code)
+            logger.debug("Roboflow response: %s", r.text[:300])
             return r
         response = await asyncio.to_thread(_upload)
     except Exception as e:

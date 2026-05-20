@@ -32,3 +32,6 @@ class DetectionResponse(BaseModel):
     inference_time_ms: float
     model_used: str  # "roboflow" ou "local"
     message: Optional[str] = None
+    nivel_alerta: str = "VERDE"
+    resumo: str = ""
+    alertas: list = []

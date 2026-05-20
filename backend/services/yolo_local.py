@@ -5,6 +5,7 @@ mAP50: 0.861
 """
 import io
 import time
+from pathlib import Path
 from PIL import Image
 from functools import lru_cache
 from ..schemas.detection import DetectionResponse, DetectionBox, BehaviorCount
@@ -19,14 +20,14 @@ except ImportError:
 # Mapeamento: classes do modelo treinado → campos do BehaviorCount
 LABEL_MAP = {
     "comendo":   "eating",
-    "deitado":   "lying",
+    "deitado":   "deitado",
     "em pe":     "standing",
     "em pé":     "standing",
     "escondido": "unknown",
     "pastando":  "eating",   # pastando = variação de comendo
 }
 
-MODEL_PATH = "backend/models/bovinsights_yolo11n_best.pt"
+MODEL_PATH = Path(__file__).parent.parent / "models" / "bovinsights_yolo11n_best.pt"
 
 
 @lru_cache(maxsize=1)
