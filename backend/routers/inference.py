@@ -1,23 +1,23 @@
 """
-backend/routers/inference.py  ← SUBSTITUI O ARQUIVO ATUAL
+backend/routers/inference.py
 
 Cadeia de fallback em 3 níveis:
   1º → Roboflow  (modelo especializado, rápido, na nuvem)
   2º → YOLO local (best.pt no servidor — sem internet)
-  3º → Gemini Vision (análise por IA geral — último recurso)
+  3º → Groq Vision (análise por IA geral — último recurso)
 
 Por que 3 níveis?
   - Roboflow pode falhar: rate limit, timeout, serviço fora do ar
   - YOLO local pode falhar: modelo não carregado, sem memória
-  - Gemini quase nunca falha: é a Google, tem SLA altíssimo
+  - Groq quase nunca falha: tem SLA altíssimo
   - Com 3 níveis, o demo NUNCA retorna erro para o cliente
 
 Logs gerados:
   [OK]    Roboflow respondeu em 320ms
   [WARN]  Roboflow falhou: timeout. Tentando YOLO local...
   [OK]    YOLO local respondeu em 890ms
-  [WARN]  YOLO local falhou: model not loaded. Tentando Gemini...
-  [OK]    Gemini respondeu em 1240ms
+  [WARN]  YOLO local falhou: model not loaded. Tentando Groq Vision...
+  [OK]    Groq Vision respondeu em 1240ms
   [ERRO]  Todos os 3 níveis falharam. Retornando erro 503.
 """
 
@@ -37,6 +37,10 @@ from ..core.config import get_settings, Settings
 router = APIRouter(prefix="/api/v1", tags=["inference"])
 logger = logging.getLogger(__name__)
 
+# ── Throttle / cache simples ──────────────────────────────────────────────────
+_ultimo_resultado: dict | None = None
+_ultimo_tempo: float = 0.0
+
 
 # ── Cadeia de fallback (núcleo da lógica) ────────────────────────────────────
 
@@ -49,6 +53,11 @@ async def _run_com_fallback(
     Retorna o resultado do primeiro que funcionar.
     Lança HTTPException 503 somente se os 3 falharem.
     """
+    global _ultimo_resultado, _ultimo_tempo
+
+    # ── Throttle: retorna cache se a última chamada foi há menos de 3s ─────────
+    if _ultimo_resultado is not None and time.time() - _ultimo_tempo < 3.0:
+        return DetectionResponse(**_ultimo_resultado)
 
     erros = []
 
@@ -60,6 +69,8 @@ async def _run_com_fallback(
             logger.warning("[WARN] Roboflow retornou 0 animais. Tentando YOLO local...")
             raise Exception("Roboflow retornou resultado vazio")
         logger.info(f"[OK] Roboflow respondeu em {(time.time()-t)*1000:.0f}ms")
+        _ultimo_resultado = resultado.model_dump()
+        _ultimo_tempo = time.time()
         return resultado
     except Exception as e:
         msg = f"Roboflow: {type(e).__name__} — {e}"
@@ -71,30 +82,34 @@ async def _run_com_fallback(
         t = time.time()
         resultado = await run_inference_local(image_bytes)
         if resultado.total_animals == 0:
-            logger.warning("[WARN] YOLO local retornou 0 animais. Tentando Gemini Vision...")
+            logger.warning("[WARN] YOLO local retornou 0 animais. Tentando Groq Vision...")
             raise Exception("YOLO local retornou resultado vazio")
         logger.info(f"[OK] YOLO local respondeu em {(time.time()-t)*1000:.0f}ms")
+        _ultimo_resultado = resultado.model_dump()
+        _ultimo_tempo = time.time()
         return resultado
     except Exception as e:
         msg = f"YOLO local: {type(e).__name__} — {e}"
         erros.append(msg)
-        logger.warning(f"[WARN] {msg}. Tentando Gemini Vision...")
+        logger.warning(f"[WARN] {msg}. Tentando Groq Vision...")
 
-    # ── NÍVEL 3: Gemini Vision ────────────────────────────────────────────────
+    # ── NÍVEL 3: Groq Vision ──────────────────────────────────────────────────
     if not gemini_disponivel():
-        erros.append("Gemini: GEMINI_API_KEY não configurada no Railway")
-        logger.error("[WARN] Gemini não configurado — pulando nível 3")
+        erros.append("Groq: GROQ_API_KEY não configurada no Railway")
+        logger.error("[WARN] Groq não configurado — pulando nível 3")
     else:
         try:
             t = time.time()
             dados = await run_inference_gemini(image_bytes)
             logger.info(
-                f"[OK] Gemini Vision respondeu em {(time.time()-t)*1000:.0f}ms"
+                f"[OK] Groq Vision respondeu em {(time.time()-t)*1000:.0f}ms"
             )
             # run_inference_gemini retorna dict — converte para DetectionResponse
+            _ultimo_resultado = dados
+            _ultimo_tempo = time.time()
             return DetectionResponse(**dados)
         except Exception as e:
-            msg = f"Gemini: {type(e).__name__} — {e}"
+            msg = f"Groq: {type(e).__name__} — {e}"
             erros.append(msg)
             logger.error(f"[ERRO] {msg}")
 
@@ -178,12 +193,12 @@ async def status_modelos():
     """
     import os
 
-    gemini_ok = gemini_disponivel()
+    groq_ok = gemini_disponivel()
 
     return {
         "roboflow": bool(os.environ.get("ROBOFLOW_API_KEY")),
         "yolo_local": True,   # Sempre tenta — falha só em runtime
-        "gemini": gemini_ok,
-        "gemini_motivo": None if gemini_ok else "GEMINI_API_KEY não configurada no Railway",
-        "ordem_fallback": ["roboflow", "yolo_local", "gemini"],
+        "groq": groq_ok,
+        "groq_motivo": None if groq_ok else "GROQ_API_KEY não configurada no Railway",
+        "ordem_fallback": ["roboflow", "yolo_local", "groq"],
     }
